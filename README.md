@@ -5,7 +5,6 @@ Shell runner for running the [SkillsBench](https://github.com/benchflow-ai/skill
 `run.sh` is meant to be executed from the SkillsBench repository root, because it uses relative paths such as `tasks/`, `jobs/`, and `tasks/<task>/environment/skills/`.
 
 ```bash
-cd ~/agents/skillsbench
 bash run.sh codex
 bash run.sh openclaw
 bash run.sh terminus
@@ -30,7 +29,7 @@ Runs every non-excluded task twice with `bench eval create`:
 
 Agent and model:
 
-- agent: `codex-acp`
+- agent harness: `codex-acp`
 - model: `gpt-5.3-codex`
 - jobs: `jobs/gpt-5.3-codex__withskills__...` and `jobs/gpt-5.3-codex__withoutskills__...`
 
@@ -49,7 +48,7 @@ Runs every non-excluded task twice with `bench eval create`:
 
 Agent and model:
 
-- agent: `openclaw`
+- agent harness: `openclaw`
 - served vLLM model: `Qwen/Qwen3.6-35B-A3B`
 - benchmark model name: `localvllm/Qwen/Qwen3.6-35B-A3B`
 - jobs: `jobs/openclaw__Qwen3.6-35B-A3B__withskills__...` and `jobs/openclaw__Qwen3.6-35B-A3B__withoutskills__...`
@@ -62,7 +61,7 @@ This mode activates the `skillsbench` conda environment, points OpenAI-compatibl
 bash run.sh terminus
 ```
 
-Runs every non-excluded task with `uv run harbor run` using the Terminus Harbor agent:
+Runs every non-excluded task with `uv run harbor run` using the Terminus Harbor harness agent:
 
 - agent import path: `libs.terminus_agent.agents.terminus_2.harbor_terminus_2_skills:HarborTerminus2WithSkills`
 - model: `openai/Qwen/Qwen3.6-35B-A3B`
