@@ -11,6 +11,9 @@ bash run.sh openclaw
 bash run.sh terminus
 ```
 
+- somes of the tasks (`EXCLUDE`) are exclued from this sequential running, because they may need more api tokens from external models, such as the task of audio transcription.
+
+- some of the tasks are inherently defective due to different causes, and they failed the oracle sanity check via  `bench eval create -t tasks/${task} -a oracle  -m oracle`
 
 ## Modes
 
