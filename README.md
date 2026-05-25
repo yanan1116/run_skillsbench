@@ -7,7 +7,6 @@ Shell runner for running the [SkillsBench](https://github.com/benchflow-ai/skill
 ```bash
 bash run.sh codex
 bash run.sh openclaw
-bash run.sh terminus
 ```
 
 - somes of the tasks (`EXCLUDE`) are exclued from this sequential running, because they may need more api tokens from external models, such as the task of audio transcription.
@@ -37,6 +36,31 @@ This mode activates the `skillsbench` conda environment and configures the Azure
 
 ### OpenClaw
 
+Before running tasks, lauch the backend LLM via vllm in docker container:
+```bash
+sudo docker run -d --name qwen_gpus --runtime nvidia --gpus '"device=0,1"' \
+      --env "HUGGING_FACE_HUB_TOKEN=hf_****" \
+    -v /etc/localtime:/etc/localtime:ro \
+    -v /etc/timezone:/etc/timezone:ro \
+    -e TZ=America/Toronto \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v /etc/ssl/certs:/etc/ssl/certs:ro \
+    -e SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    -e REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
+    -p 1700:1700 \
+    --ipc=host \
+    vllm/vllm-openai:latest \
+    --model Qwen/Qwen3.6-35B-A3B \
+    --api-key "yyy" \
+    --port 1700 \
+    --trust-remote-code \
+    --gpu_memory_utilization 0.95 \
+    --tensor-parallel-size 2 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
+```
+
+
 ```bash
 bash run.sh openclaw
 ```
@@ -55,19 +79,7 @@ Agent and model:
 
 This mode activates the `skillsbench` conda environment, points OpenAI-compatible variables at the local vLLM endpoint, and warns if `/models` does not list the expected model.
 
-### Terminus
 
-```bash
-bash run.sh terminus
-```
-
-Runs every non-excluded task with `uv run harbor run` using the Terminus Harbor harness agent:
-
-- agent import path: `libs.terminus_agent.agents.terminus_2.harbor_terminus_2_skills:HarborTerminus2WithSkills`
-- model: `openai/Qwen/Qwen3.6-35B-A3B`
-- job name: `Qwen3.6-35B-A3B__<task>__<timestamp>`
-
-Unlike Codex and OpenClaw, this mode does not run a separate without-skills `bench eval create` pair. It follows the original Terminus runner behavior.
 
 ## Shared Behavior
 
@@ -91,7 +103,6 @@ http://10.225.68.24:1700/v1
 Before running:
 
 ```bash
-cd ~/agents/skillsbench
 uv sync --locked
 ```
 

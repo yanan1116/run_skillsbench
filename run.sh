@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 
 MODE="${1:-}"
+EXTRA_AGENT_ENV_ARGS=()
+TEMP_TASK_ROOTS=()
+
+cleanup_temp_tasks() {
+  local dir
+  for dir in "${TEMP_TASK_ROOTS[@]}"; do
+    rm -rf "$dir"
+  done
+}
+trap cleanup_temp_tasks EXIT
 
 EXCLUDE=(
   gh-repo-analytics
@@ -24,11 +34,6 @@ load_api_keys() {
   : "${OPENAI_API_KEY:?OPENAI_API_KEY must be set in ~/.bashrc or the environment}"
 }
 
-activate_skillsbench() {
-  source "$(conda info --base)/etc/profile.d/conda.sh"
-  conda activate skillsbench
-}
-
 use_vllm() {
   unset AZURE_API_KEY AZURE_API_BASE AZURE_API_VERSION AZURE_OPENAI_API_KEY AZURE_OPENAI_ENDPOINT
   unset OPENAI_API_TYPE
@@ -46,11 +51,32 @@ each_task() {
   find tasks -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | shuf
 }
 
+prepare_task_copy() {
+  local task="$1"
+  local tmp_root task_copy dockerfile
+
+  tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/skillsbench-task-${task}.XXXXXX")
+  TEMP_TASK_ROOTS+=("$tmp_root")
+  task_copy="${tmp_root}/${task}"
+  cp -a "tasks/${task}" "$task_copy"
+
+  dockerfile="${task_copy}/environment/Dockerfile"
+  if [[ -f "$dockerfile" ]] && ! grep -q "mkdir -p /app" "$dockerfile"; then
+    {
+      printf '\n'
+      printf '# Local run workaround: BenchFlow uploads task skills to /app/skills.\n'
+      printf 'RUN mkdir -p /app\n'
+    } >> "$dockerfile"
+  fi
+
+  printf '%s\n' "$task_copy"
+}
+
 run_bench_pair() {
   local agent="$1"
   local model="$2"
   local job_prefix="$3"
-  local task timestamp
+  local task timestamp task_dir
 
   for task in $(each_task); do
     if is_excluded "$task"; then
@@ -60,32 +86,35 @@ run_bench_pair() {
 
     echo "=============================================================="
     echo "checking task:${task}"
-    bench tasks check "tasks/${task}"
+    uv run bench tasks check "tasks/${task}"
     echo "-------------------------------"
 
+    task_dir=$(prepare_task_copy "$task")
     timestamp=$(date +"%Y-%m-%d__%H-%M-%S")
     echo "task:${task} with skills"
-    bench eval create \
-      -t "tasks/${task}" \
-      -a "$agent" \
-      -m "$model" \
-      -o "jobs/${job_prefix}__withskills__${task}___${timestamp}" \
-      -s "tasks/${task}/environment/skills/"
+    uv run bench eval create \
+      --tasks-dir "$task_dir" \
+      --agent "$agent" \
+      --model "$model" \
+      "${EXTRA_AGENT_ENV_ARGS[@]}" \
+      --jobs-dir "jobs/${job_prefix}__withskills__${task}___${timestamp}" \
+      --skills-dir "${task_dir}/environment/skills/"
 
     echo "-------------------------------"
     echo "task:${task} without skills"
-    bench eval create \
-      -t "tasks/${task}" \
-      -a "$agent" \
-      -m "$model" \
-      -o "jobs/${job_prefix}__withoutskills__${task}___${timestamp}"
+    uv run bench eval create \
+      --tasks-dir "$task_dir" \
+      --agent "$agent" \
+      --model "$model" \
+      "${EXTRA_AGENT_ENV_ARGS[@]}" \
+      --jobs-dir "jobs/${job_prefix}__withoutskills__${task}___${timestamp}"
 
     echo "=============================================================="
   done
 }
 
 run_codex() {
-  activate_skillsbench
+  EXTRA_AGENT_ENV_ARGS=()
   load_api_keys
   : "${AZURE_OPENAI_API_KEY:?AZURE_OPENAI_API_KEY must be set in ~/.bashrc or the environment}"
 
@@ -100,52 +129,31 @@ run_codex() {
 }
 
 run_openclaw() {
-  activate_skillsbench
   load_api_keys
   use_vllm
 
   export BENCHFLOW_PROVIDER_NAME="vllm"
   export BENCHFLOW_PROVIDER_BASE_URL="$OPENAI_BASE_URL"
-  export BENCHFLOW_PROVIDER_API_KEY="$OPENAI_API_KEY"
+  export BENCHFLOW_PROVIDER_API_KEY="yyy"
   export BENCHFLOW_PROVIDER_PROTOCOL="openai-completions"
+  EXTRA_AGENT_ENV_ARGS=(
+    --agent-env "BENCHFLOW_PROVIDER_BASE_URL=${BENCHFLOW_PROVIDER_BASE_URL}"
+    --agent-env "BENCHFLOW_PROVIDER_API_KEY=${BENCHFLOW_PROVIDER_API_KEY}"
+    --agent-env "BENCHFLOW_PROVIDER_PROTOCOL=${BENCHFLOW_PROVIDER_PROTOCOL}"
+  )
 
   local model="Qwen3.6-35B-A3B"
   local vllm_model_id="Qwen/${model}"
-  local bench_model="localvllm/${vllm_model_id}"
+  local bench_model="vllm/${vllm_model_id}"
   local models_json
 
-  models_json=$(curl -fsS -H "Authorization: Bearer ${OPENAI_API_KEY}" "${OPENAI_BASE_URL}/models" 2>/dev/null || true)
+  models_json=$(curl -fsS -H "Authorization: Bearer ${BENCHFLOW_PROVIDER_API_KEY}" "${OPENAI_BASE_URL}/models" 2>/dev/null || true)
   if [[ "$models_json" != *"\"${vllm_model_id}\""* ]]; then
     echo "Warning: ${OPENAI_BASE_URL}/models did not list '${vllm_model_id}'."
     echo "OpenClaw will run with '${bench_model}', which should route to vLLM model '${vllm_model_id}'."
   fi
 
   run_bench_pair "openclaw" "$bench_model" "openclaw__${model}"
-}
-
-run_terminus() {
-  load_api_keys
-  use_vllm
-
-  local model="Qwen3.6-35B-A3B"
-  local task timestamp job_name
-
-  for task in $(each_task); do
-    if is_excluded "$task"; then
-      echo "****Skipping excluded task: $task****"
-      continue
-    fi
-
-    timestamp=$(date +"%Y-%m-%d__%H-%M-%S")
-    job_name="${model}__${task}__${timestamp}"
-    echo "------------------task:${task} without skills------------------------"
-    uv run harbor run \
-      --job-name "${job_name}" \
-      -p "tasks/${task}" \
-      --agent-import-path libs.terminus_agent.agents.terminus_2.harbor_terminus_2_skills:HarborTerminus2WithSkills \
-      -m "openai/Qwen/${model}"
-    echo "==========================================="
-  done
 }
 
 case "$MODE" in
@@ -155,11 +163,8 @@ case "$MODE" in
   openclaw)
     run_openclaw
     ;;
-  terminus)
-    run_terminus
-    ;;
   *)
-    echo "Usage: bash run.sh codex|openclaw|terminus"
+    echo "Usage: bash run.sh codex|openclaw"
     exit 2
     ;;
 esac
