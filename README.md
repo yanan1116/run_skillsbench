@@ -81,23 +81,6 @@ This mode activates the `skillsbench` conda environment, points OpenAI-compatibl
 
 
 
-## Shared Behavior
-
-All modes:
-
-- load `OPENAI_API_KEY` from the environment or from `~/.bashrc`
-- skip the shared `EXCLUDE` task list in `run.sh`
-- iterate over `tasks/` in shuffled order
-- timestamp each output job with `YYYY-MM-DD__HH-MM-SS`
-
-Codex also requires `AZURE_OPENAI_API_KEY` to be set in the environment or `~/.bashrc`.
-
-OpenClaw and Terminus use the local vLLM endpoint:
-
-```bash
-http://10.225.68.24:1700/v1
-```
-
 ## Requirements
 
 Before running:
@@ -108,17 +91,10 @@ uv sync --locked
 
 Make sure these are available:
 
-- conda environment: `skillsbench`
 - `bench` command from the SkillsBench project
 - `uv`
 - `curl` for OpenClaw model checking
 - `OPENAI_API_KEY` in `~/.bashrc` or the current shell
-- `AZURE_OPENAI_API_KEY` for Codex mode
+- `AZURE_OPENAI_API_KEY` for Codex agent
 
-## Usage Errors
 
-If no mode or an unknown mode is passed, the script prints:
-
-```bash
-Usage: bash run.sh codex|openclaw|terminus
-```
